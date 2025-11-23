@@ -209,9 +209,9 @@ const App: React.FC = () => {
     const notice = getShiftNotice(id, rotTimeRange);
     return (
       <div className="flex items-center justify-between w-full">
-        <span>{getGreenEmployeeName(id)}</span>
+        <span className="truncate mr-1">{getGreenEmployeeName(id)}</span>
         {notice && (
-          <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full font-bold ml-2 whitespace-nowrap shadow-sm border border-amber-300">
+          <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap border border-amber-200">
             {notice}
           </span>
         )}

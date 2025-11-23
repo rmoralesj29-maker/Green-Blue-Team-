@@ -74,6 +74,8 @@ export const generateGreenSchedule = (
         const shiftEndMins = getMinutes(exception.endTime);
         
         // Relaxed Logic: Overlap means present
+        // If they leave before rotation starts OR arrive after rotation ends, they are fully absent.
+        // Otherwise, they are present (potentially partial).
         if (shiftEndMins <= rotStartMins || shiftStartMins >= rotEndMins) {
            isPresent = false;
         }
@@ -127,23 +129,24 @@ export const generateGreenSchedule = (
           if (lastStation === station) score += 1000;
           
           // Penalty: Done this station 3 or more times already (Goal: Max 3)
+          // STRICT RULE: If they have done it 3 times, massive penalty to try and force them elsewhere.
           const timesDone = past.filter(s => s === station).length;
-          if (timesDone >= 3) score += 5000;
-          else if (timesDone >= 2) score += 100; // Soft discouragement
+          if (timesDone >= 3) score += 10000; 
+          else if (timesDone >= 2) score += 100; // Soft discouragement to prefer variety
           
           score += (timesDone * 10); // General variety preference
 
-          // Small random factor
+          // Small random factor to break ties
           score += Math.random();
 
           return { empId, score };
         });
 
         scoredCandidates.sort((a, b) => a.score - b.score);
-        const best = scoredCandidates[0].empId;
-        const bestScore = scoredCandidates[0].score;
+        const bestCandidate = scoredCandidates[0];
+        const best = bestCandidate.empId;
 
-        // Add warnings based on the high score triggers
+        // Check for Warning Triggers based on the chosen candidate's history
         const past = history[best];
         const timesDone = past.filter(s => s === station).length;
         const lastStation = past.length > 0 ? past[past.length - 1] : null;
@@ -152,10 +155,11 @@ export const generateGreenSchedule = (
             notifications.push({
                 id: `warn-limit-${rotMeta.id}-${best}`,
                 type: 'warning',
-                message: `${best} is assigned ${station} for the ${timesDone + 1}th time in Rotation ${rotMeta.id} (Staff limited).`,
+                message: `${best} is assigned ${station} for the ${timesDone + 1}th time in Rotation ${rotMeta.id} (Staff limits forced this).`,
                 rotationId: rotMeta.id
             });
-        } else if (lastStation === station && station !== GreenStation.MUSEUM) { // Museum repeat is often unavoidable
+        } else if (lastStation === station && station !== GreenStation.MUSEUM) { 
+             // Museum repeat is often unavoidable due to pool size, so we don't warn for museum back-to-back usually
              notifications.push({
                 id: `warn-repeat-${rotMeta.id}-${best}`,
                 type: 'warning',
