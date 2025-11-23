@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule, GreenRotation, GreenStation, ShiftException, GeneratedGreenSchedule, GreenNotification } from './types';
 import { generateSchedule } from './services/scheduler';
@@ -20,7 +19,6 @@ import {
   ChevronDown,
   ChevronUp,
   Sandwich,
-  Palette,
   Plus,
   Trash2,
   CalendarClock,
@@ -206,15 +204,26 @@ const App: React.FC = () => {
   };
 
   const renderGreenEmployee = (id: string, rotTimeRange: string) => {
+    const name = getGreenEmployeeName(id);
     const notice = getShiftNotice(id, rotTimeRange);
+
     return (
       <div className="flex items-center justify-between w-full">
-        <span className="truncate mr-1">{getGreenEmployeeName(id)}</span>
-        {notice && (
-          <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap border border-amber-200">
-            {notice}
-          </span>
-        )}
+        <span className="truncate font-bold mr-1 text-sm">{name}</span>
+        
+        <div className="flex items-center gap-1 flex-shrink-0">
+           {/* Always show ID badge with improved visibility */}
+           <span className="text-[10px] font-bold opacity-75 px-1.5 py-0.5 rounded bg-white/60 border border-black/5" title={`Employee Code: ${id}`}>
+             {id}
+           </span>
+           
+           {/* Partial shift notice */}
+           {notice && (
+            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap border border-amber-200">
+              {notice}
+            </span>
+           )}
+        </div>
       </div>
     );
   };
@@ -226,8 +235,8 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-[1800px] mx-auto px-6 h-18 flex items-center justify-between py-4">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg transition-colors ${currentTeam === TeamType.BLUE ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-200' : 'bg-gradient-to-br from-emerald-600 to-teal-600 shadow-emerald-200'}`}>
-              <Palette size={22} />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg transition-colors overflow-hidden ${currentTeam === TeamType.BLUE ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-200' : 'bg-gradient-to-br from-emerald-600 to-teal-600 shadow-emerald-200'}`}>
+              <LayoutGrid size={24} className="text-white" />
             </div>
             <div>
               <h1 className={`text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r tracking-tight ${currentTeam === TeamType.BLUE ? 'from-blue-800 to-indigo-800' : 'from-emerald-800 to-teal-800'}`}>
