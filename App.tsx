@@ -344,9 +344,18 @@ const App: React.FC = () => {
   }) => {
     const [isOver, setIsOver] = useState(false);
 
+    // Dynamic style based on state
+    // Priority: isOver (Green) > isMissing (Red) > Default
+    let statusClass = '';
+    if (isOver) {
+      statusClass = 'ring-2 ring-emerald-400 ring-offset-1 bg-emerald-50 scale-[1.01]';
+    } else if (isMissing) {
+      statusClass = 'ring-1 ring-red-300 bg-red-50'; // Removed opacity/30 for better visibility
+    }
+
     return (
       <div 
-        className={`${className} transition-all duration-200 ${isOver ? 'ring-2 ring-emerald-400 ring-offset-1 bg-emerald-50 scale-[1.01]' : ''} ${isMissing ? 'ring-1 ring-red-300 bg-red-50/30' : ''}`}
+        className={`${className} transition-all duration-200 ${statusClass}`}
         onDragOver={(e) => {
             handleDragOver(e);
             if (!isOver) setIsOver(true);
