@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule, GreenRotation, GreenStation, ShiftException, GeneratedGreenSchedule, GreenNotification } from './types';
+import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule, GreenRotation, GreenStation, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from './types';
 import { generateSchedule } from './services/scheduler';
 import { generateGreenSchedule } from './services/greenScheduler';
 import { EmployeeCard } from './components/EmployeeCard';
@@ -23,7 +24,10 @@ import {
   Trash2,
   CalendarClock,
   Bell,
-  Info
+  Info,
+  Lock,
+  Unlock,
+  GripHorizontal
 } from 'lucide-react';
 
 // Initial default config
@@ -57,6 +61,7 @@ const App: React.FC = () => {
   const [greenEmployeeNames, setGreenEmployeeNames] = useState<Record<string, string>>({});
   const [sideTasks, setSideTasks] = useState<SideTaskRule[]>([]);
   const [shiftExceptions, setShiftExceptions] = useState<ShiftException[]>([]);
+  const [forcedAssignments, setForcedAssignments] = useState<ForcedAssignment[]>([]);
   const [greenData, setGreenData] = useState<GeneratedGreenSchedule>({ rotations: [], notifications: [] });
   const [greenRefreshTrigger, setGreenRefreshTrigger] = useState(0); // To force re-shuffle
 
@@ -83,9 +88,9 @@ const App: React.FC = () => {
 
   // --- Effects (Green) ---
   useEffect(() => {
-    const gd = generateGreenSchedule(numGreenEmployees, sideTasks, shiftExceptions);
+    const gd = generateGreenSchedule(numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments);
     setGreenData(gd);
-  }, [numGreenEmployees, sideTasks, shiftExceptions, greenRefreshTrigger]);
+  }, [numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments, greenRefreshTrigger]);
 
   // --- Handlers (Blue) ---
   const handleAnalyze = async () => {
@@ -162,18 +167,81 @@ const App: React.FC = () => {
     setShiftExceptions(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
+  const clearForcedAssignments = () => {
+    setForcedAssignments([]);
+  };
+
+  const toggleForce = (rotationId: number, station: GreenStation, employeeId: string) => {
+    setForcedAssignments(prev => {
+        const exists = prev.find(f => f.rotationId === rotationId && f.employeeId === employeeId && f.station === station);
+        if (exists) {
+            return prev.filter(f => f !== exists);
+        }
+        return [...prev, { rotationId, station, employeeId }];
+    });
+  };
+
+  // --- Drag and Drop Handlers (Green) ---
+  const handleDragStart = (e: React.DragEvent, employeeId: string, rotationId: number, currentStation: GreenStation) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({ employeeId, rotationId, currentStation }));
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Add a class to the body to indicate dragging is happening
+    document.body.classList.add('dragging-active');
+  };
+
+  const handleDragEnd = () => {
+    document.body.classList.remove('dragging-active');
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetRotationId: number, targetStation: GreenStation) => {
+    e.preventDefault();
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      const { employeeId, rotationId } = data;
+
+      // Only allow dropping within the same rotation for now (simplifies UX, usually staff just swaps roles)
+      if (rotationId === targetRotationId) {
+        setForcedAssignments(prev => {
+          // Remove any existing force for this specific employee in this rotation
+          const clean = prev.filter(f => !(f.rotationId === rotationId && f.employeeId === employeeId));
+          // Add new force
+          return [...clean, { rotationId, station: targetStation, employeeId }];
+        });
+      }
+    } catch (err) {
+      console.error("Drop failed", err);
+    }
+  };
+
+
   // --- Render Helpers ---
   const getGreenEmployeeName = (id: string) => greenEmployeeNames[id] || id;
 
   const getStationStyle = (station: GreenStation) => {
     switch (station) {
-      case GreenStation.TICKET: return 'bg-amber-100 text-amber-900 border-amber-200';
-      case GreenStation.GREETER: return 'bg-orange-100 text-orange-900 border-orange-200';
-      case GreenStation.PLANETARIUM: return 'bg-emerald-100 text-emerald-900 border-emerald-200';
-      case GreenStation.MUSEUM: return 'bg-indigo-100 text-indigo-900 border-indigo-200';
-      case GreenStation.SIDE_TASK: return 'bg-slate-100 text-slate-600 border-slate-200 italic';
+      case GreenStation.TICKET: return 'bg-amber-50 text-amber-900 border-amber-200';
+      case GreenStation.GREETER: return 'bg-orange-50 text-orange-900 border-orange-200';
+      case GreenStation.PLANETARIUM: return 'bg-emerald-50 text-emerald-900 border-emerald-200';
+      case GreenStation.MUSEUM: return 'bg-indigo-50 text-indigo-900 border-indigo-200';
+      case GreenStation.SIDE_TASK: return 'bg-slate-50 text-slate-600 border-slate-200 italic';
       case GreenStation.OFF_SHIFT: return 'bg-slate-50 text-slate-400 border-slate-100 border-dashed';
       default: return 'bg-white';
+    }
+  };
+
+  const getStationLabelColor = (station: GreenStation) => {
+    switch (station) {
+      case GreenStation.TICKET: return 'bg-amber-100 text-amber-800';
+      case GreenStation.GREETER: return 'bg-orange-100 text-orange-800';
+      case GreenStation.PLANETARIUM: return 'bg-emerald-100 text-emerald-800';
+      case GreenStation.MUSEUM: return 'bg-indigo-100 text-indigo-800';
+      default: return 'bg-slate-100 text-slate-600';
     }
   };
 
@@ -182,7 +250,6 @@ const App: React.FC = () => {
     const exception = shiftExceptions.find(e => e.employeeId === empId);
     if (!exception) return null;
 
-    // rotTimeRange format "09:00 - 10:30"
     const [rotStart, rotEnd] = rotTimeRange.split(' - ');
     const [rsH, rsM] = rotStart.split(':').map(Number);
     const [reH, reM] = rotEnd.split(':').map(Number);
@@ -203,27 +270,83 @@ const App: React.FC = () => {
     return null;
   };
 
-  const renderGreenEmployee = (id: string, rotTimeRange: string) => {
+  const renderGreenEmployee = (id: string, rotTimeRange: string, rotationId: number, station: GreenStation) => {
     const name = getGreenEmployeeName(id);
     const notice = getShiftNotice(id, rotTimeRange);
+    const isForced = forcedAssignments.some(f => f.rotationId === rotationId && f.employeeId === id && f.station === station);
 
     return (
-      <div className="flex items-center justify-between w-full">
-        <span className="truncate font-bold mr-1 text-sm">{name}</span>
+      <div 
+        className={`relative flex items-center justify-between w-full group transition-all duration-200 rounded-lg pl-2 pr-2 py-2 cursor-grab active:cursor-grabbing hover:bg-white hover:shadow-md border border-transparent hover:border-slate-200 ${isForced ? 'bg-white border-slate-200 shadow-sm' : ''}`}
+        draggable
+        onDragStart={(e) => handleDragStart(e, id, rotationId, station)}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex items-center gap-2 overflow-hidden">
+          <div className="text-slate-300 group-hover:text-slate-400 cursor-grab">
+            <GripHorizontal size={14} />
+          </div>
+          <span className="truncate font-bold text-sm text-slate-800">{name}</span>
+        </div>
         
-        <div className="flex items-center gap-1 flex-shrink-0">
-           {/* Always show ID badge with improved visibility */}
-           <span className="text-[10px] font-bold opacity-75 px-1.5 py-0.5 rounded bg-white/60 border border-black/5" title={`Employee Code: ${id}`}>
-             {id}
-           </span>
-           
+        <div className="flex items-center gap-1.5 flex-shrink-0">
            {/* Partial shift notice */}
            {notice && (
-            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap border border-amber-200">
+            <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap border border-red-200">
               {notice}
             </span>
            )}
+           
+           {/* Lock / Unlock Control */}
+           {isForced ? (
+             <button 
+                onClick={() => toggleForce(rotationId, station, id)}
+                className="group/lock relative text-slate-600 hover:text-red-500 transition-colors p-1"
+             >
+                <Lock size={14} />
+                {/* Tooltip */}
+                <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 group-hover/lock:opacity-100 transition-opacity pointer-events-none z-50 text-center font-normal">
+                   Position Locked<br/>
+                   <span className="opacity-75">Shuffle will work around this. Click to unlock.</span>
+                </div>
+             </button>
+           ) : (
+             <div className="w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+               {/* Placeholder for alignment or optional lock-on-hover */}
+             </div>
+           )}
+
+           <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 min-w-[24px] text-center" title={`ID: ${id}`}>
+             {id}
+           </span>
         </div>
+      </div>
+    );
+  };
+
+  // Wrapper for station card to accept drops
+  const StationDropZone = ({ 
+    children, 
+    rotationId, 
+    station, 
+    className 
+  }: { children: React.ReactNode, rotationId: number, station: GreenStation, className?: string }) => {
+    const [isOver, setIsOver] = useState(false);
+
+    return (
+      <div 
+        className={`${className} transition-all duration-200 ${isOver ? 'ring-2 ring-emerald-400 ring-offset-1 bg-emerald-50 scale-[1.01]' : ''}`}
+        onDragOver={(e) => {
+            handleDragOver(e);
+            if (!isOver) setIsOver(true);
+        }}
+        onDragLeave={() => setIsOver(false)}
+        onDrop={(e) => {
+            setIsOver(false);
+            handleDrop(e, rotationId, station);
+        }}
+      >
+        {children}
       </div>
     );
   };
@@ -631,12 +754,23 @@ const App: React.FC = () => {
                         <Users className="absolute left-3.5 top-3.5 text-slate-400" size={18} />
                       </div>
                     </div>
-                    <button 
-                      onClick={() => setGreenRefreshTrigger(prev => prev + 1)}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-emerald-200 shadow-md"
-                    >
-                      <RefreshCw size={16} /> Re-Shuffle Rotation
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setGreenRefreshTrigger(prev => prev + 1)}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-emerald-200 shadow-md"
+                      >
+                        <RefreshCw size={16} /> Re-Shuffle
+                      </button>
+                      {forcedAssignments.length > 0 && (
+                        <button 
+                          onClick={clearForcedAssignments}
+                          className="bg-white border border-slate-300 text-slate-500 hover:text-slate-700 hover:bg-slate-50 p-3 rounded-xl transition-colors"
+                          title="Clear all manual overrides"
+                        >
+                          <Unlock size={16} />
+                        </button>
+                      )}
+                    </div>
                  </div>
               </div>
 
@@ -812,53 +946,53 @@ const App: React.FC = () => {
                              
                              {/* Station Cards */}
                              <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ticket (2)</h4>
-                                <div className="space-y-2">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.TICKET)}`}>Ticket (2)</div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.TICKET} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.TICKET].map(id => (
-                                      <div key={id} className={`p-3 rounded-xl border font-bold text-sm shadow-sm flex items-center justify-between ${getStationStyle(GreenStation.TICKET)}`}>
-                                         {renderGreenEmployee(id, rot.timeRange)}
+                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.TICKET)}`}>
+                                         {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.TICKET)}
                                       </div>
                                    ))}
                                    {rot.assignments[GreenStation.TICKET].length < 2 && (
-                                     <div className="p-3 rounded-xl border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center">Missing Staff</div>
+                                     <div className="p-3 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center">Missing Staff</div>
                                    )}
-                                </div>
+                                </StationDropZone>
                              </div>
 
                              <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Greeter (1)</h4>
-                                <div className="space-y-2">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.GREETER)}`}>Greeter (1)</div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.GREETER} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.GREETER].map(id => (
-                                      <div key={id} className={`p-3 rounded-xl border font-bold text-sm shadow-sm flex items-center justify-between ${getStationStyle(GreenStation.GREETER)}`}>
-                                         {renderGreenEmployee(id, rot.timeRange)}
+                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.GREETER)}`}>
+                                         {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.GREETER)}
                                       </div>
                                    ))}
-                                </div>
+                                </StationDropZone>
                              </div>
 
                              <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Planetarium (1)</h4>
-                                <div className="space-y-2">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.PLANETARIUM)}`}>Planetarium (1)</div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.PLANETARIUM} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.PLANETARIUM].map(id => (
-                                      <div key={id} className={`p-3 rounded-xl border font-bold text-sm shadow-sm flex items-center justify-between ${getStationStyle(GreenStation.PLANETARIUM)}`}>
-                                         {renderGreenEmployee(id, rot.timeRange)}
+                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.PLANETARIUM)}`}>
+                                         {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.PLANETARIUM)}
                                       </div>
                                    ))}
-                                </div>
+                                </StationDropZone>
                              </div>
 
                              <div className="space-y-2 lg:col-span-2">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Museum</h4>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.MUSEUM)}`}>Museum</div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.MUSEUM} className="grid grid-cols-2 gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.MUSEUM].map(id => (
-                                      <div key={id} className={`p-3 rounded-xl border font-bold text-sm shadow-sm flex items-center justify-between ${getStationStyle(GreenStation.MUSEUM)}`}>
-                                         {renderGreenEmployee(id, rot.timeRange)}
+                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.MUSEUM)}`}>
+                                         {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.MUSEUM)}
                                       </div>
                                    ))}
                                    {rot.assignments[GreenStation.MUSEUM].length === 0 && (
-                                      <div className="p-3 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs text-center col-span-2">No staff assigned</div>
+                                      <div className="p-3 rounded-lg border border-dashed border-slate-200 text-slate-400 text-xs text-center col-span-2 flex items-center justify-center">No staff assigned</div>
                                    )}
-                                </div>
+                                </StationDropZone>
                              </div>
 
                           </div>
@@ -872,7 +1006,7 @@ const App: React.FC = () => {
                                      <div className="flex flex-wrap gap-2">
                                         {rot.assignments[GreenStation.SIDE_TASK].map(id => (
                                            <span key={id} className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200 font-medium">
-                                              {renderGreenEmployee(id, rot.timeRange)}
+                                              {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.SIDE_TASK)}
                                            </span>
                                         ))}
                                      </div>

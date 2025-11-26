@@ -1,4 +1,5 @@
 
+
 export enum StationType {
   SHOW = 'Show',
   OCEAN = 'Ocean',
@@ -92,6 +93,12 @@ export interface GreenNotification {
   type: 'info' | 'warning' | 'critical';
   message: string;
   rotationId?: number;
+}
+
+export interface ForcedAssignment {
+  rotationId: number;
+  station: GreenStation;
+  employeeId: string;
 }
 
 export interface GeneratedGreenSchedule {

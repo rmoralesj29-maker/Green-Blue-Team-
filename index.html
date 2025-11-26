@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -25,6 +26,17 @@
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: #94a3b8;
+      }
+      
+      /* Tooltip Logic */
+      .group\/lock:hover .group-hover\/lock\:opacity-100 {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      
+      /* Dragging Cursor Fix */
+      .dragging-active {
+        cursor: grabbing !important;
       }
     </style>
   <script type="importmap">

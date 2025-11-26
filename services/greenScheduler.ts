@@ -1,5 +1,5 @@
 
-import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification } from '../types';
+import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from '../types';
 
 const ROTATIONS_META = [
   { id: 1, start: "09:00", end: "10:30" },
@@ -28,7 +28,8 @@ const shuffle = <T>(array: T[]): T[] => {
 export const generateGreenSchedule = (
   numEmployees: number,
   sideTasks: SideTaskRule[],
-  shiftExceptions: ShiftException[]
+  shiftExceptions: ShiftException[],
+  forcedAssignments: ForcedAssignment[] = []
 ): GeneratedGreenSchedule => {
   const employees = Array.from({ length: numEmployees }, (_, i) => `B${i + 1}`);
   const notifications: GreenNotification[] = [];
@@ -63,6 +64,7 @@ export const generateGreenSchedule = (
 
     // 1. Categorize Employees for this Rotation
     const availablePool: string[] = [];
+    const poolMap = new Set<string>(); // Fast lookup
 
     employees.forEach(empId => {
       // Check Shift Exceptions
@@ -74,8 +76,6 @@ export const generateGreenSchedule = (
         const shiftEndMins = getMinutes(exception.endTime);
         
         // Relaxed Logic: Overlap means present
-        // If they leave before rotation starts OR arrive after rotation ends, they are fully absent.
-        // Otherwise, they are present (potentially partial).
         if (shiftEndMins <= rotStartMins || shiftStartMins >= rotEndMins) {
            isPresent = false;
         }
@@ -99,21 +99,52 @@ export const generateGreenSchedule = (
         });
       } else {
         availablePool.push(empId);
+        poolMap.add(empId);
       }
     });
 
-    // Shuffle available pool for randomness
+    // 2. Process Forced Assignments (Manual Overrides) first
+    // This allows manual moves in Rot 1 to immediately affect history for Rot 2
+    const rotationForces = forcedAssignments.filter(f => f.rotationId === rotMeta.id);
+    
+    rotationForces.forEach(force => {
+        // We allow forcing someone even if they were technically marked "Off Shift" or "Side Task"
+        // if the user explicitly drags them there.
+        
+        // Remove from whatever list they were in
+        assignments[GreenStation.OFF_SHIFT] = assignments[GreenStation.OFF_SHIFT].filter(id => id !== force.employeeId);
+        assignments[GreenStation.SIDE_TASK] = assignments[GreenStation.SIDE_TASK].filter(id => id !== force.employeeId);
+        
+        // Remove from available pool if they were there
+        const poolIndex = availablePool.indexOf(force.employeeId);
+        if (poolIndex > -1) {
+          availablePool.splice(poolIndex, 1);
+        }
+
+        // Add to assigned station
+        // Prevent duplicates in case multiple forces exist (though UI prevents this)
+        if (!assignments[force.station].includes(force.employeeId)) {
+          assignments[force.station].push(force.employeeId);
+          history[force.employeeId].push(force.station);
+        }
+    });
+
+    // Shuffle remaining available pool for randomness
     let availableEmployees = shuffle(availablePool);
 
     // Helper to assign best candidate to a station
-    const assignBestCandidates = (station: GreenStation, count: number) => {
-      for (let i = 0; i < count; i++) {
+    const assignBestCandidates = (station: GreenStation, targetCount: number) => {
+      // Calculate how many we still need after forced assignments
+      const currentCount = assignments[station].length;
+      const countNeeded = Math.max(0, targetCount - currentCount);
+
+      for (let i = 0; i < countNeeded; i++) {
         if (availableEmployees.length === 0) {
             // Log shortage
             notifications.push({
               id: `missing-${rotMeta.id}-${station}-${i}`,
               type: 'critical',
-              message: `Not enough staff for ${station} in Rotation ${rotMeta.id}. Needed ${count}, found ${i}.`,
+              message: `Not enough staff for ${station} in Rotation ${rotMeta.id}. Needed ${targetCount}, found ${assignments[station].length}.`,
               rotationId: rotMeta.id
             });
             return;
@@ -126,22 +157,29 @@ export const generateGreenSchedule = (
           const lastStation = past.length > 0 ? past[past.length - 1] : null;
           
           // Penalty: Immediate repetition
-          if (lastStation === station) score += 1000;
+          // Huge penalty to ensure recalculation avoids this if user manually moved them in previous rotation
+          if (lastStation === station) score += 50000;
           
           // Penalty: Done this station 3 or more times already (Goal: Max 3)
-          // STRICT RULE: If they have done it 3 times, massive penalty to try and force them elsewhere.
           const timesDone = past.filter(s => s === station).length;
-          if (timesDone >= 3) score += 10000; 
-          else if (timesDone >= 2) score += 100; // Soft discouragement to prefer variety
+          if (timesDone >= 3) score += 20000; 
+          else if (timesDone >= 2) score += 500; 
           
-          score += (timesDone * 10); // General variety preference
+          score += (timesDone * 50); // General variety preference
 
-          // Small random factor to break ties
-          score += Math.random();
+          // RULE: NOBODY REPEATS PLANETARIUM EVER
+          const hasDonePlanetarium = past.includes(GreenStation.PLANETARIUM);
+          if (station === GreenStation.PLANETARIUM && hasDonePlanetarium) {
+             score += 1000000; // Nuclear penalty
+          }
+
+          // Small random factor to break ties (0-10)
+          score += Math.random() * 10;
 
           return { empId, score };
         });
 
+        // Sort by score ascending (lowest score is best)
         scoredCandidates.sort((a, b) => a.score - b.score);
         const bestCandidate = scoredCandidates[0];
         const best = bestCandidate.empId;
@@ -159,7 +197,7 @@ export const generateGreenSchedule = (
                 rotationId: rotMeta.id
             });
         } else if (lastStation === station && station !== GreenStation.MUSEUM) { 
-             // Museum repeat is often unavoidable due to pool size, so we don't warn for museum back-to-back usually
+             // Museum repeat is often unavoidable due to pool size
              notifications.push({
                 id: `warn-repeat-${rotMeta.id}-${best}`,
                 type: 'warning',
