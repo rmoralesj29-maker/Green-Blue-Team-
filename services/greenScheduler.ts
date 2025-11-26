@@ -1,5 +1,3 @@
-
-
 import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from '../types';
 
 const ROTATIONS_META = [
@@ -109,9 +107,27 @@ export const generateGreenSchedule = (
     const rotationForces = forcedAssignments.filter(f => f.rotationId === rotMeta.id);
     
     rotationForces.forEach(force => {
-        // We allow forcing someone even if they were technically marked "Off Shift" or "Side Task"
-        // if the user explicitly drags them there.
-        
+        // Manual Override Validation Logic (Notify user if they break rules)
+        const past = history[force.employeeId];
+        const lastStation = past.length > 0 ? past[past.length - 1] : null;
+
+        // User requested notification for manual override of rules
+        if (lastStation === force.station) {
+            notifications.push({
+                id: `warn-force-repeat-${rotMeta.id}-${force.employeeId}`,
+                type: 'warning',
+                message: `Manual Override: ${force.employeeId} is repeating ${force.station} consecutively in Rotation ${rotMeta.id}.`
+            });
+        }
+
+        if (force.station === GreenStation.PLANETARIUM && past.includes(GreenStation.PLANETARIUM)) {
+            notifications.push({
+                id: `warn-force-arora-${rotMeta.id}-${force.employeeId}`,
+                type: 'warning',
+                message: `Manual Override: ${force.employeeId} is assigned Planetarium more than once.`
+            });
+        }
+
         // Remove from whatever list they were in
         assignments[GreenStation.OFF_SHIFT] = assignments[GreenStation.OFF_SHIFT].filter(id => id !== force.employeeId);
         assignments[GreenStation.SIDE_TASK] = assignments[GreenStation.SIDE_TASK].filter(id => id !== force.employeeId);
@@ -123,7 +139,6 @@ export const generateGreenSchedule = (
         }
 
         // Add to assigned station
-        // Prevent duplicates in case multiple forces exist (though UI prevents this)
         if (!assignments[force.station].includes(force.employeeId)) {
           assignments[force.station].push(force.employeeId);
           history[force.employeeId].push(force.station);
@@ -143,7 +158,6 @@ export const generateGreenSchedule = (
         if (availableEmployees.length === 0) {
             // Log shortage only if we really need people
             if (targetCount > 0) {
-               // Only warn if this is a priority station
                if (station !== GreenStation.MUSEUM) {
                   notifications.push({
                     id: `missing-${rotMeta.id}-${station}-${i}`,
@@ -161,24 +175,46 @@ export const generateGreenSchedule = (
           let score = 0;
           const past = history[empId];
           const lastStation = past.length > 0 ? past[past.length - 1] : null;
+          const secondLastStation = past.length > 1 ? past[past.length - 2] : null;
           
-          // Penalty: Immediate repetition
-          if (lastStation === station) score += 50000;
+          // --- RULE 1: NO CONSECUTIVE REPEAT (Strict) ---
+          // "Never repeat stations in a row"
+          if (lastStation === station) {
+             score += 5000000; // Nuclear penalty
+          }
           
-          // Penalty: Done this station 3 or more times already (Goal: Max 3)
-          const timesDone = past.filter(s => s === station).length;
-          if (timesDone >= 3) score += 20000; 
-          else if (timesDone >= 2) score += 500; 
+          // --- RULE 2: GAP OF 2 PREFERENCE (Strict) ---
+          // "At least 2 rotation of different station"
+          if (secondLastStation === station) {
+             score += 200000; // Major penalty
+          }
           
-          score += (timesDone * 50); // General variety preference
-
-          // RULE: NOBODY REPEATS PLANETARIUM EVER
+          // --- RULE 3: PLANETARIUM MAX ONCE (Strict) ---
+          // "Never repeat arora"
           const hasDonePlanetarium = past.includes(GreenStation.PLANETARIUM);
           if (station === GreenStation.PLANETARIUM && hasDonePlanetarium) {
-             score += 1000000; // Nuclear penalty
+             score += 10000000; // Maximum penalty
           }
 
-          // Small random factor to break ties (0-10)
+          // --- HEURISTIC 1: ESCAPE MUSEUM ---
+          // "Jarred repeats museum and in a row" - Fix
+          // If the candidate was in Museum last time, prioritize them for this Non-Museum station.
+          if (station !== GreenStation.MUSEUM && lastStation === GreenStation.MUSEUM) {
+             score -= 1000000; // Massive bonus to be picked
+          }
+
+          // --- HEURISTIC 2: SAVE PLANETARIUM VIRGINS ---
+          // "Jack is doing twice Arora" - Fix
+          // Prefer picking Planetarium-Veterans for Ticket/Greeter to save the Virgins for the Planetarium slot.
+          if (station !== GreenStation.PLANETARIUM && !hasDonePlanetarium) {
+             score += 2000; // Slight penalty: "Don't pick me for Ticket, save me for Planetarium"
+          }
+
+          // Soft Rule: Variety
+          const timesDone = past.filter(s => s === station).length;
+          score += (timesDone * 1000); 
+
+          // Random factor
           score += Math.random() * 10;
 
           return { empId, score };
@@ -189,24 +225,25 @@ export const generateGreenSchedule = (
         const bestCandidate = scoredCandidates[0];
         const best = bestCandidate.empId;
 
-        // Check for Warning Triggers based on the chosen candidate's history
+        // Validation Logging
         const past = history[best];
-        const timesDone = past.filter(s => s === station).length;
         const lastStation = past.length > 0 ? past[past.length - 1] : null;
 
-        if (timesDone >= 3) {
+        // Warn if strict rules are broken (shouldn't happen with these scores unless 1 person is left)
+        if (lastStation === station && station !== GreenStation.MUSEUM) {
             notifications.push({
-                id: `warn-limit-${rotMeta.id}-${best}`,
-                type: 'warning',
-                message: `${best} is assigned ${station} for the ${timesDone + 1}th time in Rotation ${rotMeta.id} (Staff limits forced this).`,
-                rotationId: rotMeta.id
-            });
-        } else if (lastStation === station && station !== GreenStation.MUSEUM) { 
-             // Museum repeat is often unavoidable due to pool size
-             notifications.push({
                 id: `warn-repeat-${rotMeta.id}-${best}`,
                 type: 'warning',
-                message: `${best} is repeating ${station} back-to-back in Rotation ${rotMeta.id}.`,
+                message: `${best} is repeating ${station} back-to-back in Rotation ${rotMeta.id} (No other options).`,
+                rotationId: rotMeta.id
+            });
+        }
+        
+        if (station === GreenStation.PLANETARIUM && past.includes(GreenStation.PLANETARIUM)) {
+             notifications.push({
+                id: `warn-limit-arora-${rotMeta.id}-${best}`,
+                type: 'critical',
+                message: `${best} is assigned Planetarium for the 2nd time (Logic failed).`,
                 rotationId: rotMeta.id
             });
         }
@@ -218,30 +255,13 @@ export const generateGreenSchedule = (
       }
     };
 
-    // --- PRIORITIES (Updated as per user request) ---
-    // 1. Ticket (1st person)
-    // 2. Greeter (1st person)
-    // 3. Planetarium (1st person)
-    // 4. Ticket (2nd person)
-    // 5. Museum (Everyone else)
-
-    // Note: The targetCount argument is the "Total Desired Count", not "Amount to Add".
-    // The helper function subtracts existing (forced) count from target.
-
-    // Priority 1: Ensure at least 1 person at Ticket
+    // --- PRIORITIES ---
     assignBestCandidates(GreenStation.TICKET, 1);
-
-    // Priority 2: Ensure 1 person at Greeter
     assignBestCandidates(GreenStation.GREETER, 1);
-
-    // Priority 3: Ensure 1 person at Planetarium
     assignBestCandidates(GreenStation.PLANETARIUM, 1);
-
-    // Priority 4: Ensure Ticket has 2 people total
     assignBestCandidates(GreenStation.TICKET, 2);
 
-    // Priority 5: Dump everyone else into Museum
-    // Calculate total remaining + currently assigned to museum to get the target
+    // Museum Dump
     const currentMuseumCount = assignments[GreenStation.MUSEUM].length;
     const remainingCount = availableEmployees.length;
     assignBestCandidates(GreenStation.MUSEUM, currentMuseumCount + remainingCount);
