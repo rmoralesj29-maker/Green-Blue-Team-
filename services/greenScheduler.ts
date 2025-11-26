@@ -1,3 +1,4 @@
+
 import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from '../types';
 
 const ROTATIONS_META = [
