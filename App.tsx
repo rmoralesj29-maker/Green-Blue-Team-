@@ -27,7 +27,8 @@ import {
   Info,
   Lock,
   Unlock,
-  GripHorizontal
+  GripHorizontal,
+  AlertCircle
 } from 'lucide-react';
 
 // Initial default config
@@ -277,46 +278,49 @@ const App: React.FC = () => {
 
     return (
       <div 
-        className={`relative flex items-center justify-between w-full group transition-all duration-200 rounded-lg pl-2 pr-2 py-2 cursor-grab active:cursor-grabbing hover:bg-white hover:shadow-md border border-transparent hover:border-slate-200 ${isForced ? 'bg-white border-slate-200 shadow-sm' : ''}`}
+        className={`relative flex items-center justify-between min-w-[120px] max-w-full group transition-all duration-200 rounded-lg pl-2 pr-2 py-2.5 cursor-grab active:cursor-grabbing hover:bg-white hover:shadow-md border border-transparent hover:border-slate-200 ${isForced ? 'bg-white border-slate-200 shadow-sm' : ''}`}
         draggable
         onDragStart={(e) => handleDragStart(e, id, rotationId, station)}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div className="text-slate-300 group-hover:text-slate-400 cursor-grab">
+        {/* Warning Indicator - Small Red Dot with Tooltip */}
+        {notice && (
+          <div className="absolute top-1 right-1 z-10 group/alert">
+             <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm cursor-help"></div>
+             {/* Hover Tooltip */}
+             <div className="absolute bottom-full right-0 mb-1 w-max bg-red-600 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover/alert:opacity-100 transition-opacity pointer-events-none z-50 font-bold whitespace-nowrap">
+               {notice}
+             </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 overflow-hidden flex-1">
+          <div className="text-slate-300 group-hover:text-slate-400 cursor-grab flex-shrink-0">
             <GripHorizontal size={14} />
           </div>
-          <span className="truncate font-bold text-sm text-slate-800">{name}</span>
+          <span className="truncate font-bold text-xs text-slate-700 leading-tight">{name}</span>
         </div>
         
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-           {/* Partial shift notice */}
-           {notice && (
-            <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap border border-red-200">
-              {notice}
-            </span>
-           )}
-           
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
            {/* Lock / Unlock Control */}
            {isForced ? (
              <button 
                 onClick={() => toggleForce(rotationId, station, id)}
-                className="group/lock relative text-slate-600 hover:text-red-500 transition-colors p-1"
+                className="group/lock relative text-slate-400 hover:text-red-500 transition-colors p-0.5"
              >
-                <Lock size={14} />
-                {/* Tooltip */}
+                <Lock size={12} />
                 <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 group-hover/lock:opacity-100 transition-opacity pointer-events-none z-50 text-center font-normal">
                    Position Locked<br/>
                    <span className="opacity-75">Shuffle will work around this. Click to unlock.</span>
                 </div>
              </button>
            ) : (
-             <div className="w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-               {/* Placeholder for alignment or optional lock-on-hover */}
+             <div className="w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Placeholder */}
              </div>
            )}
 
-           <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 min-w-[24px] text-center" title={`ID: ${id}`}>
+           <span className="text-[9px] font-mono font-bold text-slate-400 bg-slate-100 px-1 py-0.5 rounded border border-slate-200 min-w-[20px] text-center" title={`ID: ${id}`}>
              {id}
            </span>
         </div>
@@ -946,51 +950,65 @@ const App: React.FC = () => {
                              
                              {/* Station Cards */}
                              <div className="space-y-2">
-                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.TICKET)}`}>Ticket (2)</div>
-                                <StationDropZone rotationId={rot.id} station={GreenStation.TICKET} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.TICKET)}`}>
+                                   Ticket
+                                </div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.TICKET} className="flex flex-wrap gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.TICKET].map(id => (
-                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.TICKET)}`}>
+                                      <div key={id} className={`rounded-lg border shadow-sm w-full md:w-auto min-w-[130px] ${getStationStyle(GreenStation.TICKET)}`}>
                                          {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.TICKET)}
                                       </div>
                                    ))}
                                    {rot.assignments[GreenStation.TICKET].length < 2 && (
-                                     <div className="p-3 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center">Missing Staff</div>
+                                     <div className="p-3 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center w-full">Missing Staff</div>
                                    )}
                                 </StationDropZone>
                              </div>
 
                              <div className="space-y-2">
-                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.GREETER)}`}>Greeter (1)</div>
-                                <StationDropZone rotationId={rot.id} station={GreenStation.GREETER} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.GREETER)}`}>
+                                   Greeter
+                                </div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.GREETER} className="flex flex-wrap gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.GREETER].map(id => (
-                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.GREETER)}`}>
+                                      <div key={id} className={`rounded-lg border shadow-sm w-full md:w-auto min-w-[130px] ${getStationStyle(GreenStation.GREETER)}`}>
                                          {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.GREETER)}
                                       </div>
                                    ))}
+                                   {rot.assignments[GreenStation.GREETER].length < 1 && (
+                                     <div className="p-3 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center w-full">Missing Staff</div>
+                                   )}
                                 </StationDropZone>
                              </div>
 
                              <div className="space-y-2">
-                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.PLANETARIUM)}`}>Planetarium (1)</div>
-                                <StationDropZone rotationId={rot.id} station={GreenStation.PLANETARIUM} className="space-y-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.PLANETARIUM)}`}>
+                                   Planetarium
+                                </div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.PLANETARIUM} className="flex flex-wrap gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.PLANETARIUM].map(id => (
-                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.PLANETARIUM)}`}>
+                                      <div key={id} className={`rounded-lg border shadow-sm w-full md:w-auto min-w-[130px] ${getStationStyle(GreenStation.PLANETARIUM)}`}>
                                          {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.PLANETARIUM)}
                                       </div>
                                    ))}
+                                   {rot.assignments[GreenStation.PLANETARIUM].length < 1 && (
+                                     <div className="p-3 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-400 text-xs font-medium text-center w-full">Missing Staff</div>
+                                   )}
                                 </StationDropZone>
                              </div>
 
                              <div className="space-y-2 lg:col-span-2">
-                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.MUSEUM)}`}>Museum</div>
-                                <StationDropZone rotationId={rot.id} station={GreenStation.MUSEUM} className="grid grid-cols-2 gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
+                                <div className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md inline-block ${getStationLabelColor(GreenStation.MUSEUM)}`}>
+                                  {rot.id === 3 ? "Museum (Breaks)" : "Museum"}
+                                </div>
+                                <StationDropZone rotationId={rot.id} station={GreenStation.MUSEUM} className="flex flex-wrap gap-2 min-h-[60px] rounded-xl bg-slate-50/50 p-2 border border-slate-100">
                                    {rot.assignments[GreenStation.MUSEUM].map(id => (
-                                      <div key={id} className={`rounded-lg border shadow-sm ${getStationStyle(GreenStation.MUSEUM)}`}>
+                                      <div key={id} className={`rounded-lg border shadow-sm w-full md:w-[48%] flex-1 min-w-[130px] ${getStationStyle(GreenStation.MUSEUM)}`}>
                                          {renderGreenEmployee(id, rot.timeRange, rot.id, GreenStation.MUSEUM)}
                                       </div>
                                    ))}
                                    {rot.assignments[GreenStation.MUSEUM].length === 0 && (
-                                      <div className="p-3 rounded-lg border border-dashed border-slate-200 text-slate-400 text-xs text-center col-span-2 flex items-center justify-center">No staff assigned</div>
+                                      <div className="p-3 rounded-lg border border-dashed border-slate-200 text-slate-400 text-xs text-center w-full flex items-center justify-center">No staff assigned</div>
                                    )}
                                 </StationDropZone>
                              </div>

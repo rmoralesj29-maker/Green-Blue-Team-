@@ -1,4 +1,5 @@
 
+
 import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from '../types';
 
 const ROTATIONS_META = [
@@ -140,13 +141,18 @@ export const generateGreenSchedule = (
 
       for (let i = 0; i < countNeeded; i++) {
         if (availableEmployees.length === 0) {
-            // Log shortage
-            notifications.push({
-              id: `missing-${rotMeta.id}-${station}-${i}`,
-              type: 'critical',
-              message: `Not enough staff for ${station} in Rotation ${rotMeta.id}. Needed ${targetCount}, found ${assignments[station].length}.`,
-              rotationId: rotMeta.id
-            });
+            // Log shortage only if we really need people
+            if (targetCount > 0) {
+               // Only warn if this is a priority station
+               if (station !== GreenStation.MUSEUM) {
+                  notifications.push({
+                    id: `missing-${rotMeta.id}-${station}-${i}`,
+                    type: 'critical',
+                    message: `Not enough staff for ${station} in Rotation ${rotMeta.id}. Needed ${targetCount}, found ${assignments[station].length}.`,
+                    rotationId: rotMeta.id
+                  });
+               }
+            }
             return;
         }
 
@@ -157,7 +163,6 @@ export const generateGreenSchedule = (
           const lastStation = past.length > 0 ? past[past.length - 1] : null;
           
           // Penalty: Immediate repetition
-          // Huge penalty to ensure recalculation avoids this if user manually moved them in previous rotation
           if (lastStation === station) score += 50000;
           
           // Penalty: Done this station 3 or more times already (Goal: Max 3)
@@ -213,12 +218,33 @@ export const generateGreenSchedule = (
       }
     };
 
-    // 2. Fill Slots based on Requirements
-    assignBestCandidates(GreenStation.TICKET, 2);
+    // --- PRIORITIES (Updated as per user request) ---
+    // 1. Ticket (1st person)
+    // 2. Greeter (1st person)
+    // 3. Planetarium (1st person)
+    // 4. Ticket (2nd person)
+    // 5. Museum (Everyone else)
+
+    // Note: The targetCount argument is the "Total Desired Count", not "Amount to Add".
+    // The helper function subtracts existing (forced) count from target.
+
+    // Priority 1: Ensure at least 1 person at Ticket
+    assignBestCandidates(GreenStation.TICKET, 1);
+
+    // Priority 2: Ensure 1 person at Greeter
     assignBestCandidates(GreenStation.GREETER, 1);
+
+    // Priority 3: Ensure 1 person at Planetarium
     assignBestCandidates(GreenStation.PLANETARIUM, 1);
-    // Museum: Everyone else who is available
-    assignBestCandidates(GreenStation.MUSEUM, availableEmployees.length);
+
+    // Priority 4: Ensure Ticket has 2 people total
+    assignBestCandidates(GreenStation.TICKET, 2);
+
+    // Priority 5: Dump everyone else into Museum
+    // Calculate total remaining + currently assigned to museum to get the target
+    const currentMuseumCount = assignments[GreenStation.MUSEUM].length;
+    const remainingCount = availableEmployees.length;
+    assignBestCandidates(GreenStation.MUSEUM, currentMuseumCount + remainingCount);
 
     rotations.push({
       id: rotMeta.id,
