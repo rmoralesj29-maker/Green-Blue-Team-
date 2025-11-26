@@ -257,12 +257,16 @@ export const generateGreenSchedule = (
     };
 
     // --- PRIORITIES ---
+    // 1. Ticket (1st)
     assignBestCandidates(GreenStation.TICKET, 1);
+    // 2. Greeter (1st)
     assignBestCandidates(GreenStation.GREETER, 1);
+    // 3. Planetarium (1st)
     assignBestCandidates(GreenStation.PLANETARIUM, 1);
+    // 4. Ticket (2nd)
     assignBestCandidates(GreenStation.TICKET, 2);
 
-    // Museum Dump
+    // 5. Museum (Dump)
     const currentMuseumCount = assignments[GreenStation.MUSEUM].length;
     const remainingCount = availableEmployees.length;
     assignBestCandidates(GreenStation.MUSEUM, currentMuseumCount + remainingCount);
