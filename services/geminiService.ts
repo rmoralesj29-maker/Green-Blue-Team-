@@ -1,42 +1,43 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GeneratedSchedule, LunchConfig } from "../types";
 import { format, differenceInMinutes, parse, isAfter, isBefore } from "date-fns";
 
 export const analyzeScheduleWithGemini = async (
-  schedule: GeneratedSchedule, 
+  schedule: GeneratedSchedule,
   configSummary: string,
   employeeNames: Record<string, string>
 ): Promise<string> => {
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
     throw new Error("API Key not found");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
   // 1. Calculate stats per employee for the prompt
-  const stats = Object.keys(employeeNames).length > 0 
+  const stats = Object.keys(employeeNames).length > 0
     ? Object.keys(employeeNames).map(empId => {
-        const blocks = schedule.blocks.filter(b => b.employeeId === empId);
-        const oceanMinutes = blocks.filter(b => b.station === 'Ocean')
-          .reduce((acc, b) => acc + differenceInMinutes(b.endTime, b.startTime), 0);
-        const floorMinutes = blocks.filter(b => b.station === 'Floor -1')
-          .reduce((acc, b) => acc + differenceInMinutes(b.endTime, b.startTime), 0);
-        const name = employeeNames[empId] || empId;
-        return `- ${name}: Ocean ${oceanMinutes} min, Floor -1 ${floorMinutes} min`;
-      }).join('\n')
+      const blocks = schedule.blocks.filter(b => b.employeeId === empId);
+      const oceanMinutes = blocks.filter(b => b.station === 'Ocean')
+        .reduce((acc, b) => acc + differenceInMinutes(new Date(b.endTime), new Date(b.startTime)), 0);
+      const floorMinutes = blocks.filter(b => b.station === 'Floor -1')
+        .reduce((acc, b) => acc + differenceInMinutes(new Date(b.endTime), new Date(b.startTime)), 0);
+      const name = employeeNames[empId] || empId;
+      return `- ${name}: Ocean ${oceanMinutes} min, Floor -1 ${floorMinutes} min`;
+    }).join('\n')
     : "No employee names provided, skipping detailed per-person summary.";
 
-  const issuesText = schedule.issues.map(i => 
+  const issuesText = schedule.issues.map(i =>
     `- GAP: ${i.message} (${i.station})`
   ).join('\n');
 
-  const blocksSummary = schedule.blocks.slice(0, 60).map(b => 
-    `${employeeNames[b.employeeId] || b.employeeId}: ${b.station} ${format(b.startTime, 'HH:mm')}-${format(b.endTime, 'HH:mm')}`
+  const blocksSummary = schedule.blocks.slice(0, 60).map(b =>
+    `${employeeNames[b.employeeId] || b.employeeId}: ${b.station} ${format(new Date(b.startTime), 'HH:mm')}-${format(new Date(b.endTime), 'HH:mm')}`
   ).join('\n');
 
   const prompt = `
     Act as a Museum Operations Manager. Analyze this daily staff rotation schedule.
-
     CONTEXT:
     Configuration: ${configSummary}
     
@@ -48,27 +49,22 @@ export const analyzeScheduleWithGemini = async (
        - Summarize total time each person spends at "Ocean" (important for capacity limits).
        - Summarize total time each person spends at "Floor -1" (important for crowd control).
        - Use the Calculated Stats provided below.
-
     DATA:
     Calculated Stats (Use these for your summary):
     ${stats}
-
     Coverage Gaps (System Detected):
     ${issuesText.length > 0 ? issuesText : "No gaps detected by system."}
-
     Schedule Sample:
     ${blocksSummary}
     ...
-
     Provide a concise, professional assessment in Markdown. Use bullet points.
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    return response.text || "Unable to generate analysis.";
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    return text || "Unable to generate analysis.";
   } catch (error) {
     console.error("Gemini Error:", error);
     return "Error connecting to AI Assistant. Please check your connection.";
@@ -81,21 +77,23 @@ export const generateLunchPlan = async (
   numEmployees: number,
   employeeNames: Record<string, string>
 ): Promise<string> => {
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
     throw new Error("API Key not found");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   // Filter schedule to only show relevant blocks around lunch time for context
   const today = new Date();
   const winStart = parse(lunchConfig.windowStart, 'HH:mm', today);
   const winEnd = parse(lunchConfig.windowEnd, 'HH:mm', today);
-  
+
   const relevantBlocks = schedule.blocks
-    .filter(b => !isBefore(b.endTime, winStart) && !isAfter(b.startTime, winEnd))
+    .filter(b => !isBefore(new Date(b.endTime), winStart) && !isAfter(new Date(b.startTime), winEnd))
     .slice(0, 50)
-    .map(b => `${employeeNames[b.employeeId] || b.employeeId} is at ${b.station} from ${format(b.startTime, 'HH:mm')} to ${format(b.endTime, 'HH:mm')}`)
+    .map(b => `${employeeNames[b.employeeId] || b.employeeId} is at ${b.station} from ${format(new Date(b.startTime), 'HH:mm')} to ${format(new Date(b.endTime), 'HH:mm')}`)
     .join('\n');
 
   const prompt = `
@@ -128,11 +126,10 @@ export const generateLunchPlan = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    return response.text || "Unable to generate lunch plan.";
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    return text || "Unable to generate lunch plan.";
   } catch (error) {
     console.error("Gemini Lunch Error:", error);
     return "Error connecting to AI Assistant.";
