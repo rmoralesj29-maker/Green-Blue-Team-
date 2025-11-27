@@ -1,7 +1,7 @@
 
 import { GreenRotation, GreenStation, SideTaskRule, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from '../types';
 
-const ROTATIONS_META = [
+export const ROTATIONS_META = [
   { id: 1, start: "09:00", end: "10:30" },
   { id: 2, start: "10:30", end: "12:00" },
   { id: 3, start: "12:00", end: "14:00" },

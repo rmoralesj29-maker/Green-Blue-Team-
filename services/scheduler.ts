@@ -15,7 +15,8 @@ const CUTOFF_HOUR = 17;
  */
 export const generateSchedule = (
   config: ScheduleConfig,
-  employeeOffsets: Record<string, number> // employeeId -> index of show to start at
+  employeeOffsets: Record<string, number>, // employeeId -> index of show to start at
+  employeeShifts: Record<string, { start: string; end: string }> = {} // employeeId -> { start: "HH:mm", end: "HH:mm" }
 ): GeneratedSchedule => {
   const { frequency, firstShowTime, lastShowTime, numEmployees, durationOcean, durationFloor } = config;
   
@@ -63,6 +64,24 @@ export const generateSchedule = (
     const empId = `A${i}`;
     let showIndex = employeeOffsets[empId] ?? (i - 1); // Default staggered start
 
+    // --- Shift Constraints Logic ---
+    const shift = employeeShifts[empId];
+    // Default to Start of Day / End of Day if not specified
+    const shiftStart = shift?.start && shift.start.length === 5 
+      ? parse(shift.start, 'HH:mm', baseDate) 
+      : startOfDay(baseDate);
+    const shiftEnd = shift?.end && shift.end.length === 5
+      ? parse(shift.end, 'HH:mm', baseDate) 
+      : addMinutes(startOfDay(baseDate), 24 * 60);
+
+    // Fast-forward showIndex so the first Show starts AFTER or AT their arrival time
+    while (
+      showIndex < showStartTimes.length && 
+      isBefore(showStartTimes[showIndex], shiftStart)
+    ) {
+      showIndex++;
+    }
+
     // Calculate path for the entire day
     // We only process if the starting index is within valid show times
     if (showIndex >= 0 && showIndex < showStartTimes.length) {
@@ -73,10 +92,12 @@ export const generateSchedule = (
         
         // --- Block 1: Show ---
         const showStart = currentCycleStart;
-        // CUTOFF CHECK: If show starts at or after 17:00, stop everything.
+        
+        // CHECK: Cutoff (17:00) OR Personal Shift End
         if (!isBefore(showStart, cutoffTime)) break;
-
         const showEnd = addMinutes(showStart, DURATION_SHOW);
+        if (isAfter(showEnd, shiftEnd)) break; // Stop if shift ends
+
         allBlocks.push({
           id: `${empId}-${showStart.toISOString()}-show`,
           station: StationType.SHOW,
@@ -87,10 +108,11 @@ export const generateSchedule = (
 
         // --- Block 2: Ocean ---
         const oceanStart = addMinutes(currentCycleStart, offsetOceanStart);
-        // CUTOFF CHECK: If Ocean starts at or after 17:00, stop.
+        // CHECK: Cutoff OR Personal Shift End
         if (!isBefore(oceanStart, cutoffTime)) break;
-
         const oceanEnd = addMinutes(oceanStart, durationOcean);
+        if (isAfter(oceanEnd, shiftEnd)) break; // Stop if shift ends
+
         allBlocks.push({
           id: `${empId}-${showStart.toISOString()}-ocean`,
           station: StationType.OCEAN,
@@ -101,10 +123,11 @@ export const generateSchedule = (
 
         // --- Block 3: Floor -1 ---
         const floorStart = addMinutes(currentCycleStart, offsetFloorStart);
-        // CUTOFF CHECK: If Floor starts at or after 17:00, stop.
+        // CHECK: Cutoff OR Personal Shift End
         if (!isBefore(floorStart, cutoffTime)) break;
-
         const floorEnd = addMinutes(floorStart, durationFloor);
+        if (isAfter(floorEnd, shiftEnd)) break; // Stop if shift ends
+
         allBlocks.push({
           id: `${empId}-${showStart.toISOString()}-floor`,
           station: StationType.FLOOR_MINUS_1,

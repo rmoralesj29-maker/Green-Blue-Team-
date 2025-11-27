@@ -1,5 +1,5 @@
 {
-  "name": "MuseumFlow",
+  "name": "Museum System",
   "description": "A smart scheduling tool for museum staff rotations, featuring automated pattern generation, coverage validation, and AI-powered insights.",
   "requestFramePermissions": []
 }

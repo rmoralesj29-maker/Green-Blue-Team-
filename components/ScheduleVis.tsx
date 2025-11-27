@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { GeneratedSchedule } from '../types';
 import { TimelineBlock } from './TimelineBlock';
@@ -7,9 +8,10 @@ interface Props {
   schedule: GeneratedSchedule;
   config: { firstShowTime: string; lastShowTime: string };
   onEmployeeClick: (empId: string) => void;
+  currentTime?: Date;
 }
 
-export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick }) => {
+export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick, currentTime }) => {
   // Increased zoom level for better visibility
   const pixelsPerMinute = 3; 
 
@@ -30,6 +32,15 @@ export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick
   }
   
   const employees = Array.from(new Set(schedule.blocks.map(b => b.employeeId))).sort();
+  
+  // Calculate current time line position
+  let currentTimeLeft = -1;
+  if (currentTime) {
+      const diff = differenceInMinutes(currentTime, start);
+      if (diff >= 0 && diff <= totalMinutes) {
+          currentTimeLeft = diff * pixelsPerMinute;
+      }
+  }
 
   return (
     <div className="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl bg-white shadow-md">
@@ -53,6 +64,15 @@ export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick
                 </div>
               );
             })}
+            {/* Current Time Indicator on Header */}
+            {currentTimeLeft >= 0 && (
+                <div 
+                    className="absolute bottom-0 h-4 w-0 border-l-2 border-red-500 z-50 flex flex-col items-center"
+                    style={{ left: `${currentTimeLeft}px` }}
+                >
+                    <div className="w-2 h-2 rounded-full bg-red-500 -mb-1"></div>
+                </div>
+            )}
           </div>
         </div>
 
@@ -70,6 +90,13 @@ export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick
                   />
                 );
               })}
+              {/* Current Time Vertical Line */}
+              {currentTimeLeft >= 0 && (
+                <div 
+                    className="absolute top-0 bottom-0 border-r-2 border-red-500 z-10 pointer-events-none opacity-50"
+                    style={{ left: `${currentTimeLeft}px` }} 
+                />
+              )}
           </div>
 
           {employees.map((empId, index) => {
@@ -93,6 +120,7 @@ export const ScheduleVis: React.FC<Props> = ({ schedule, config, onEmployeeClick
                         block={block} 
                         dayStart={start} 
                         pixelsPerMinute={pixelsPerMinute} 
+                        currentTime={currentTime}
                       />
                    ))}
                 </div>

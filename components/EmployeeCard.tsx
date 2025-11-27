@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { TimeBlock, StationType } from '../types';
-import { format, differenceInMinutes } from 'date-fns';
+import { format, differenceInMinutes, isBefore } from 'date-fns';
 import { Clock } from 'lucide-react';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   blocks: TimeBlock[];
   onClose?: () => void;
   className?: string;
+  currentTime?: Date;
+  fadePastEvents?: boolean;
 }
 
 const getStationColor = (station: StationType) => {
@@ -24,7 +27,7 @@ const getStationColor = (station: StationType) => {
   }
 };
 
-export const EmployeeCard: React.FC<Props> = ({ employeeId, employeeName, blocks, onClose, className = '' }) => {
+export const EmployeeCard: React.FC<Props> = ({ employeeId, employeeName, blocks, onClose, className = '', currentTime, fadePastEvents = true }) => {
   // Sort blocks by start time to ensure chronological order
   const sortedBlocks = [...blocks].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
   
@@ -70,31 +73,35 @@ export const EmployeeCard: React.FC<Props> = ({ employeeId, employeeName, blocks
               No assignments.
             </div>
         ) : (
-            sortedBlocks.map((block) => (
-            <div 
-                key={block.id} 
-                className={`p-2 rounded-md shadow-sm flex justify-between items-center group hover:bg-white transition-all ${getStationColor(block.station)}`}
-            >
-                <div className="flex flex-col min-w-0">
-                    <span className="font-bold text-[9px] uppercase tracking-wider opacity-70 mb-0.5 truncate">
-                        {block.station}
-                    </span>
-                    <span className="text-sm font-bold tracking-tight text-slate-800">
-                        {format(block.startTime, 'HH:mm')} 
-                        <span className="text-[10px] font-normal opacity-50 mx-1">to</span> 
-                        {format(block.endTime, 'HH:mm')}
-                    </span>
-                </div>
-                <div className="text-right opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold bg-white/50 px-1.5 py-0.5 rounded text-slate-600 ml-2 whitespace-nowrap">
-                   {differenceInMinutes(block.endTime, block.startTime)}m
-                </div>
-            </div>
-            ))
+            sortedBlocks.map((block) => {
+                const isPast = currentTime ? isBefore(block.endTime, currentTime) : false;
+                const shouldFade = isPast && fadePastEvents;
+                return (
+                    <div 
+                        key={block.id} 
+                        className={`p-2 rounded-md shadow-sm flex justify-between items-center group hover:bg-white transition-all ${getStationColor(block.station)} ${shouldFade ? 'opacity-40 grayscale' : 'opacity-100'}`}
+                    >
+                        <div className="flex flex-col min-w-0">
+                            <span className="font-bold text-[9px] uppercase tracking-wider opacity-70 mb-0.5 truncate">
+                                {block.station}
+                            </span>
+                            <span className="text-sm font-bold tracking-tight text-slate-800">
+                                {format(block.startTime, 'HH:mm')} 
+                                <span className="text-[10px] font-normal opacity-50 mx-1">to</span> 
+                                {format(block.endTime, 'HH:mm')}
+                            </span>
+                        </div>
+                        <div className="text-right opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold bg-white/50 px-1.5 py-0.5 rounded text-slate-600 ml-2 whitespace-nowrap">
+                        {differenceInMinutes(block.endTime, block.startTime)}m
+                        </div>
+                    </div>
+                );
+            })
         )}
       </div>
       
       <div className="bg-white border-t border-slate-200 px-3 py-1.5 flex justify-between items-center text-[9px] text-slate-400 font-medium shrink-0">
-        <span>MuseumFlow</span>
+        <span>Museum System</span>
         <span className="font-bold text-slate-600">{rotations} Rotations</span>
       </div>
     </div>
