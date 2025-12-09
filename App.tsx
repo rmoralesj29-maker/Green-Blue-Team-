@@ -47,7 +47,8 @@ const STORAGE_KEYS = {
   GREEN_TASKS: 'museum_green_tasks',
   GREEN_EXCEPTIONS: 'museum_green_exceptions',
   GREEN_FORCED: 'museum_green_forced',
-  CURRENT_TEAM: 'museum_current_team'
+  CURRENT_TEAM: 'museum_current_team',
+  TEAM_LOCKS: 'museum_team_locks'
 };
 
 const loadState = <T,>(key: string, fallback: T): T => {
@@ -122,12 +123,19 @@ const App: React.FC = () => {
     loadState(STORAGE_KEYS.GREEN_EXCEPTIONS, [])
   );
   
-  const [forcedAssignments, setForcedAssignments] = useState<ForcedAssignment[]>(() => 
+  const [forcedAssignments, setForcedAssignments] = useState<ForcedAssignment[]>(() =>
     loadState(STORAGE_KEYS.GREEN_FORCED, [])
   );
 
   const [greenData, setGreenData] = useState<GeneratedGreenSchedule>({ rotations: [], notifications: [] });
   const [greenRefreshTrigger, setGreenRefreshTrigger] = useState(0); // To force re-shuffle
+
+  // --- Team Swap State ---
+  const [teamLocks, setTeamLocks] = useState<{ blue: Record<string, boolean>; green: Record<string, boolean> }>(() =>
+    loadState(STORAGE_KEYS.TEAM_LOCKS, { blue: {}, green: {} })
+  );
+  const [selectedBlueForSwap, setSelectedBlueForSwap] = useState<string>('');
+  const [selectedGreenForSwap, setSelectedGreenForSwap] = useState<string>('');
 
   // --- Persistence Effects ---
   useEffect(() => saveState(STORAGE_KEYS.CURRENT_TEAM, currentTeam), [currentTeam]);
@@ -139,6 +147,7 @@ const App: React.FC = () => {
   useEffect(() => saveState(STORAGE_KEYS.GREEN_TASKS, sideTasks), [sideTasks]);
   useEffect(() => saveState(STORAGE_KEYS.GREEN_EXCEPTIONS, shiftExceptions), [shiftExceptions]);
   useEffect(() => saveState(STORAGE_KEYS.GREEN_FORCED, forcedAssignments), [forcedAssignments]);
+  useEffect(() => saveState(STORAGE_KEYS.TEAM_LOCKS, teamLocks), [teamLocks]);
 
 
   // --- Effects (Time) ---
@@ -190,6 +199,21 @@ const App: React.FC = () => {
     if (!schedule) return [];
     return Array.from(new Set(schedule.blocks.map(b => b.employeeId))).sort();
   }, [schedule]);
+
+  const blueEmployeeIds = useMemo(() => Array.from({ length: config.numEmployees }, (_, i) => `A${i + 1}`), [config.numEmployees]);
+  const greenEmployeeIds = useMemo(() => Array.from({ length: numGreenEmployees }, (_, i) => `B${i + 1}`), [numGreenEmployees]);
+
+  useEffect(() => {
+    if (!blueEmployeeIds.includes(selectedBlueForSwap)) {
+      setSelectedBlueForSwap(blueEmployeeIds[0] || '');
+    }
+  }, [blueEmployeeIds, selectedBlueForSwap]);
+
+  useEffect(() => {
+    if (!greenEmployeeIds.includes(selectedGreenForSwap)) {
+      setSelectedGreenForSwap(greenEmployeeIds[0] || '');
+    }
+  }, [greenEmployeeIds, selectedGreenForSwap]);
 
   const applySmartDurations = () => {
     setConfig(prev => ({
@@ -332,6 +356,86 @@ const App: React.FC = () => {
     } catch (err) {
       console.error("Drop failed", err);
     }
+  };
+
+  // --- Team Swap Helpers ---
+  const toggleTeamLock = (team: 'blue' | 'green', id: string) => {
+    setTeamLocks(prev => ({
+      ...prev,
+      [team]: {
+        ...prev[team],
+        [id]: !prev[team][id]
+      }
+    }));
+  };
+
+  const swapNames = (blueId: string, greenId: string) => {
+    if (!blueId || !greenId) return;
+    if (teamLocks.blue[blueId] || teamLocks.green[greenId]) return;
+
+    setEmployeeNames(prev => {
+      const updated = { ...prev };
+      const greenName = greenEmployeeNames[greenId];
+      if (greenName) {
+        updated[blueId] = greenName;
+      } else {
+        delete updated[blueId];
+      }
+      return updated;
+    });
+
+    setGreenEmployeeNames(prev => {
+      const updated = { ...prev };
+      const blueName = employeeNames[blueId];
+      if (blueName) {
+        updated[greenId] = blueName;
+      } else {
+        delete updated[greenId];
+      }
+      return updated;
+    });
+  };
+
+  const swapEntireTeams = () => {
+    const newBlueNames = { ...employeeNames };
+    const newGreenNames = { ...greenEmployeeNames };
+
+    const maxPairs = Math.min(blueEmployeeIds.length, greenEmployeeIds.length);
+
+    for (let i = 0; i < maxPairs; i++) {
+      const blueId = blueEmployeeIds[i];
+      const greenId = greenEmployeeIds[i];
+
+      if (teamLocks.blue[blueId] || teamLocks.green[greenId]) continue;
+
+      const blueName = newBlueNames[blueId];
+      const greenName = newGreenNames[greenId];
+
+      if (greenName) {
+        newBlueNames[blueId] = greenName;
+      } else {
+        delete newBlueNames[blueId];
+      }
+
+      if (blueName) {
+        newGreenNames[greenId] = blueName;
+      } else {
+        delete newGreenNames[greenId];
+      }
+    }
+
+    setEmployeeNames(newBlueNames);
+    setGreenEmployeeNames(newGreenNames);
+  };
+
+  const swapSelectedEmployees = () => {
+    if (!selectedBlueForSwap || !selectedGreenForSwap) return;
+    swapNames(selectedBlueForSwap, selectedGreenForSwap);
+  };
+
+  const getDisplayName = (id: string, team: 'blue' | 'green') => {
+    const name = team === 'blue' ? employeeNames[id] : greenEmployeeNames[id];
+    return name || id;
   };
 
   // --- Render Helpers ---
@@ -553,7 +657,111 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-[1800px] mx-auto px-6 py-8">
-        
+
+        {/* Team Swap Utility */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Team Shuffle</p>
+              <h2 className="text-xl font-bold text-slate-800">Move staff between Blue and Green</h2>
+              <p className="text-sm text-slate-500">Swap a couple people or flip the full roster. Locks keep anyone in place.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={swapSelectedEmployees}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-emerald-600 text-white text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!selectedBlueForSwap || !selectedGreenForSwap || teamLocks.blue[selectedBlueForSwap] || teamLocks.green[selectedGreenForSwap]}
+              >
+                <ArrowRight size={16} />
+                Swap Selected
+              </button>
+              <button
+                onClick={swapEntireTeams}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold border border-slate-200 hover:bg-slate-50"
+              >
+                <RefreshCw size={16} />
+                Swap Entire Team
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Blue Team</label>
+              <select
+                value={selectedBlueForSwap}
+                onChange={(e) => setSelectedBlueForSwap(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm font-semibold text-slate-800 bg-white shadow-sm"
+              >
+                {blueEmployeeIds.map(id => (
+                  <option key={id} value={id} disabled={!!teamLocks.blue[id]}>
+                    {getDisplayName(id, 'blue')} {teamLocks.blue[id] ? '(Locked)' : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="flex flex-wrap gap-2">
+                {blueEmployeeIds.map(id => (
+                  <button
+                    key={id}
+                    onClick={() => toggleTeamLock('blue', id)}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 transition-colors ${teamLocks.blue[id] ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'}`}
+                  >
+                    {teamLocks.blue[id] ? <Lock size={12} /> : <Unlock size={12} />}
+                    {getDisplayName(id, 'blue')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Green Team</label>
+              <select
+                value={selectedGreenForSwap}
+                onChange={(e) => setSelectedGreenForSwap(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm font-semibold text-slate-800 bg-white shadow-sm"
+              >
+                {greenEmployeeIds.map(id => (
+                  <option key={id} value={id} disabled={!!teamLocks.green[id]}>
+                    {getDisplayName(id, 'green')} {teamLocks.green[id] ? '(Locked)' : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="flex flex-wrap gap-2">
+                {greenEmployeeIds.map(id => (
+                  <button
+                    key={id}
+                    onClick={() => toggleTeamLock('green', id)}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 transition-colors ${teamLocks.green[id] ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
+                  >
+                    {teamLocks.green[id] ? <Lock size={12} /> : <Unlock size={12} />}
+                    {getDisplayName(id, 'green')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 bg-slate-50 rounded-xl p-4 border border-dashed border-slate-200">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600 to-emerald-600 text-white shadow-sm">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800">Lock before you swap</p>
+                  <p className="text-xs text-slate-500 leading-snug">Locks freeze people in place for both single and full-team swaps. Names move with their slot so your math stays intact.</p>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 space-y-1">
+                <p className="font-semibold text-slate-700">Quick Tips</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Pick one from each team and hit <strong>Swap Selected</strong>.</li>
+                  <li>Use <strong>Swap Entire Team</strong> to flip everyone at once.</li>
+                  <li>Locked staff stay where they are.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ================= BLUE TEAM ================= */}
         {currentTeam === TeamType.BLUE && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
