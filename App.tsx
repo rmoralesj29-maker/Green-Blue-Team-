@@ -34,7 +34,9 @@ import {
   ArrowRight,
   RotateCcw,
   Eye,
-  EyeOff
+  EyeOff,
+  Download,
+  Upload
 } from 'lucide-react';
 
 // --- Local Storage Helpers ---
@@ -323,6 +325,60 @@ const App: React.FC = () => {
         // 3. Optional: Reload to be absolutely sure
         setTimeout(() => window.location.reload(), 100);
     }
+  };
+
+  // --- Backup & Restore Handlers ---
+  const handleExportData = () => {
+    const data: Record<string, any> = {};
+    Object.values(STORAGE_KEYS).forEach(key => {
+      const value = localStorage.getItem(key);
+      if (value) {
+        try {
+          data[key] = JSON.parse(value);
+        } catch (e) {
+          data[key] = value;
+        }
+      }
+    });
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `museum-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const data = JSON.parse(content);
+
+        if (confirm("This will overwrite your current configuration with the data from the file. Are you sure?")) {
+            Object.keys(data).forEach(key => {
+              // Only import keys that match our known storage keys to avoid garbage
+              if (Object.values(STORAGE_KEYS).includes(key)) {
+                 localStorage.setItem(key, JSON.stringify(data[key]));
+              }
+            });
+            window.location.reload();
+        }
+      } catch (err) {
+        alert("Failed to parse backup file. Invalid JSON.");
+        console.error(err);
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
   };
 
   // --- Drag and Drop Handlers (Green) ---
@@ -628,6 +684,32 @@ const App: React.FC = () => {
                     Restart System
                 </span>
              </button>
+
+             <div className="h-6 w-px bg-slate-200 mx-2"></div>
+
+             {/* Backup Controls */}
+             <div className="flex items-center gap-2">
+                 <button
+                    onClick={handleExportData}
+                    className="group relative w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                    title="Backup Data"
+                 >
+                    <Download size={20} />
+                    <span className="absolute top-full right-0 mt-2 w-max px-3 py-1.5 bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-50 transform translate-y-1">
+                        Download Backup
+                    </span>
+                 </button>
+                 <label
+                    className="group relative w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all cursor-pointer"
+                    title="Restore Data"
+                 >
+                    <Upload size={20} />
+                    <input type="file" accept=".json" onChange={handleImportData} className="hidden" />
+                    <span className="absolute top-full right-0 mt-2 w-max px-3 py-1.5 bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-50 transform translate-y-1">
+                        Restore Backup
+                    </span>
+                 </label>
+             </div>
 
              {/* Clock */}
              <div className="flex flex-col items-end mr-2 border-r border-slate-200 pr-6 h-10 justify-center">
