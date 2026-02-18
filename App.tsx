@@ -4,7 +4,6 @@ import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule,
 import { generateSchedule } from './services/scheduler';
 import { generateGreenSchedule, ROTATIONS_META } from './services/greenScheduler';
 import { EmployeeCard } from './components/EmployeeCard';
-import { analyzeScheduleWithGemini, generateLunchPlan } from './services/geminiService';
 import { isAfter, isBefore, parse, startOfDay } from 'date-fns';
 import { 
   AlertTriangle, 
@@ -105,10 +104,6 @@ const App: React.FC = () => {
   );
 
   const [schedule, setSchedule] = useState<GeneratedSchedule | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<string>("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [lunchAnalysis, setLunchAnalysis] = useState<string>("");
-  const [isPlanningLunch, setIsPlanningLunch] = useState(false);
   const [showAllIssues, setShowAllIssues] = useState(false);
 
   // --- Green Team State ---
@@ -183,19 +178,11 @@ const App: React.FC = () => {
 
   // --- Effects (Green) ---
   useEffect(() => {
-    const gd = generateGreenSchedule(numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments);
+    const gd = generateGreenSchedule(numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments, greenEmployeeNames);
     setGreenData(gd);
-  }, [numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments, greenRefreshTrigger]);
+  }, [numGreenEmployees, sideTasks, shiftExceptions, forcedAssignments, greenEmployeeNames, greenRefreshTrigger]);
 
   // --- Handlers (Blue) ---
-  const handleAnalyze = async () => {
-    if (!schedule) return;
-    setIsAnalyzing(true);
-    const configSummary = `Freq: ${config.frequency}m, Start: ${config.firstShowTime}, End: ${config.lastShowTime}, Staff: ${config.numEmployees}, Ocean: ${config.durationOcean}m, Floor: ${config.durationFloor}m`;
-    const result = await analyzeScheduleWithGemini(schedule, configSummary, employeeNames);
-    setAiAnalysis(result);
-    setIsAnalyzing(false);
-  };
 
   const employeeIds = useMemo(() => {
     if (!schedule) return [];
@@ -948,28 +935,6 @@ const App: React.FC = () => {
 
             {/* Right: Vis */}
             <div className="lg:col-span-9 space-y-6">
-              <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 mb-1">Schedule Analysis</h2>
-                  <div className="text-sm flex items-center gap-2">
-                    {totalCurrentIssues === 0 ? (
-                      <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border border-emerald-200">
-                        <CheckCircle2 size={12} />
-                        All Stations Covered
-                      </span>
-                    ) : (
-                      <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border border-rose-200">
-                        <AlertTriangle size={12} />
-                        {totalCurrentIssues} Issues Detected
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button onClick={handleAnalyze} disabled={isAnalyzing} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 transition-all disabled:opacity-70 transform hover:-translate-y-0.5">
-                  {isAnalyzing ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                  Analyze Schedule
-                </button>
-              </div>
 
               {/* Warnings */}
               {schedule && visibleIssues.length > 0 && (

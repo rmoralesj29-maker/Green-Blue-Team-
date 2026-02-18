@@ -29,14 +29,22 @@ export const generateGreenSchedule = (
   numEmployees: number,
   sideTasks: SideTaskRule[],
   shiftExceptions: ShiftException[],
-  forcedAssignments: ForcedAssignment[] = []
+  forcedAssignments: ForcedAssignment[] = [],
+  greenEmployeeNames: Record<string, string> = {}
 ): GeneratedGreenSchedule => {
   const employees = Array.from({ length: numEmployees }, (_, i) => `B${i + 1}`);
   const notifications: GreenNotification[] = [];
+
+  const getName = (id: string) => greenEmployeeNames[id] || id;
   
-  // Track history: employeeId -> List of stations they have done
+  // Track history: Name -> List of stations they have done
   const history: Record<string, GreenStation[]> = {};
-  employees.forEach(id => history[id] = []);
+  employees.forEach(id => {
+    const name = getName(id);
+    if (!history[name]) {
+        history[name] = [];
+    }
+  });
 
   const rotations: GreenRotation[] = [];
 
@@ -45,7 +53,7 @@ export const generateGreenSchedule = (
     notifications.push({
       id: `shift-${ex.id}`,
       type: 'info',
-      message: `${ex.employeeId} has a custom shift (${ex.startTime}-${ex.endTime}).`
+      message: `${getName(ex.employeeId)} (${ex.employeeId}) has a custom shift (${ex.startTime}-${ex.endTime}).`
     });
   });
 
@@ -90,11 +98,11 @@ export const generateGreenSchedule = (
       const sideTask = sideTasks.find(t => t.rotationId === rotMeta.id && t.employeeId === empId);
       if (sideTask) {
         assignments[GreenStation.SIDE_TASK].push(empId);
-        history[empId].push(GreenStation.SIDE_TASK);
+        history[getName(empId)].push(GreenStation.SIDE_TASK);
         notifications.push({
           id: `side-${rotMeta.id}-${empId}`,
           type: 'info',
-          message: `${empId} assigned to Side Task in Rotation ${rotMeta.id}.`,
+          message: `${getName(empId)} assigned to Side Task in Rotation ${rotMeta.id}.`,
           rotationId: rotMeta.id
         });
       } else {
@@ -108,8 +116,9 @@ export const generateGreenSchedule = (
     const rotationForces = forcedAssignments.filter(f => f.rotationId === rotMeta.id);
     
     rotationForces.forEach(force => {
+        const forceName = getName(force.employeeId);
         // Manual Override Validation Logic (Notify user if they break rules)
-        const past = history[force.employeeId];
+        const past = history[forceName] || []; // Fallback empty if name somehow missing
         const lastStation = past.length > 0 ? past[past.length - 1] : null;
 
         // User requested notification for manual override of rules
@@ -117,7 +126,7 @@ export const generateGreenSchedule = (
             notifications.push({
                 id: `warn-force-repeat-${rotMeta.id}-${force.employeeId}`,
                 type: 'warning',
-                message: `Manual Override: ${force.employeeId} is repeating ${force.station} consecutively in Rotation ${rotMeta.id}.`
+                message: `Manual Override: ${forceName} is repeating ${force.station} consecutively in Rotation ${rotMeta.id}.`
             });
         }
 
@@ -125,7 +134,7 @@ export const generateGreenSchedule = (
             notifications.push({
                 id: `warn-force-arora-${rotMeta.id}-${force.employeeId}`,
                 type: 'warning',
-                message: `Manual Override: ${force.employeeId} is assigned Planetarium more than once.`
+                message: `Manual Override: ${forceName} is assigned Planetarium more than once.`
             });
         }
 
@@ -142,7 +151,8 @@ export const generateGreenSchedule = (
         // Add to assigned station
         if (!assignments[force.station].includes(force.employeeId)) {
           assignments[force.station].push(force.employeeId);
-          history[force.employeeId].push(force.station);
+          if (!history[forceName]) history[forceName] = [];
+          history[forceName].push(force.station);
         }
     });
 
@@ -174,7 +184,8 @@ export const generateGreenSchedule = (
         // Score candidates based on history
         const scoredCandidates = availableEmployees.map(empId => {
           let score = 0;
-          const past = history[empId];
+          const empName = getName(empId);
+          const past = history[empName] || [];
           const lastStation = past.length > 0 ? past[past.length - 1] : null;
           const secondLastStation = past.length > 1 ? past[past.length - 2] : null;
           
@@ -225,9 +236,10 @@ export const generateGreenSchedule = (
         scoredCandidates.sort((a, b) => a.score - b.score);
         const bestCandidate = scoredCandidates[0];
         const best = bestCandidate.empId;
+        const bestName = getName(best);
 
         // Validation Logging
-        const past = history[best];
+        const past = history[bestName] || [];
         const lastStation = past.length > 0 ? past[past.length - 1] : null;
 
         // Warn if strict rules are broken (shouldn't happen with these scores unless 1 person is left)
@@ -235,7 +247,7 @@ export const generateGreenSchedule = (
             notifications.push({
                 id: `warn-repeat-${rotMeta.id}-${best}`,
                 type: 'warning',
-                message: `${best} is repeating ${station} back-to-back in Rotation ${rotMeta.id} (No other options).`,
+                message: `${bestName} is repeating ${station} back-to-back in Rotation ${rotMeta.id} (No other options).`,
                 rotationId: rotMeta.id
             });
         }
@@ -244,13 +256,14 @@ export const generateGreenSchedule = (
              notifications.push({
                 id: `warn-limit-arora-${rotMeta.id}-${best}`,
                 type: 'critical',
-                message: `${best} is assigned Planetarium for the 2nd time (Logic failed).`,
+                message: `${bestName} is assigned Planetarium for the 2nd time (Logic failed).`,
                 rotationId: rotMeta.id
             });
         }
         
         assignments[station].push(best);
-        history[best].push(station);
+        if (!history[bestName]) history[bestName] = [];
+        history[bestName].push(station);
         
         availableEmployees = availableEmployees.filter(e => e !== best);
       }
