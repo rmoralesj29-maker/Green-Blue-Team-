@@ -222,9 +222,14 @@ export const generateGreenSchedule = (
              score += 2000; // Slight penalty: "Don't pick me for Ticket, save me for Planetarium"
           }
 
-          // Soft Rule: Variety
+          // --- RULE 4: MAX 2 TIMES SAME STATION (Strict) ---
           const timesDone = past.filter(s => s === station).length;
-          score += (timesDone * 1000); 
+          if (timesDone >= 2) {
+             score += 10000000; // Nuclear penalty
+          } else {
+             // Soft Rule: Variety
+             score += (timesDone * 1000);
+          }
 
           // Random factor
           score += Math.random() * 10;

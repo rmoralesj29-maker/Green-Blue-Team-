@@ -1,5 +1,4 @@
 
-
 export enum StationType {
   SHOW = 'Show',
   OCEAN = 'Ocean',
@@ -104,4 +103,16 @@ export interface ForcedAssignment {
 export interface GeneratedGreenSchedule {
   rotations: GreenRotation[];
   notifications: GreenNotification[];
+}
+
+export interface PresetData {
+  config: ScheduleConfig;
+  employeeNames: Record<string, string>;
+  employeeShifts: Record<string, { start: string, end: string }>;
+  numGreenEmployees: number;
+  greenEmployeeNames: Record<string, string>;
+  sideTasks: SideTaskRule[];
+  shiftExceptions: ShiftException[];
+  forcedAssignments: ForcedAssignment[];
+  teamLocks: { blue: Record<string, boolean>; green: Record<string, boolean> };
 }

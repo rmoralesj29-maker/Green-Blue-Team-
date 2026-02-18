@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule, GreenRotation, GreenStation, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment } from './types';
+import { ScheduleConfig, GeneratedSchedule, LunchConfig, TeamType, SideTaskRule, GreenRotation, GreenStation, ShiftException, GeneratedGreenSchedule, GreenNotification, ForcedAssignment, PresetData } from './types';
 import { generateSchedule } from './services/scheduler';
 import { generateGreenSchedule, ROTATIONS_META } from './services/greenScheduler';
 import { EmployeeCard } from './components/EmployeeCard';
@@ -38,6 +38,13 @@ import {
   Upload
 } from 'lucide-react';
 
+const EMPLOYEE_NAMES_LIST = [
+  "Anna", "Ari", "Bríet", "Cale", "Chantel", "Elijah", "Elisa", "Elvar",
+  "Emil", "Emilía", "Enrique", "Fabien", "Gareth", "Gloriousgospel",
+  "Ingso", "Iva", "Jack", "Jasmín", "Laura", "Marieta", "Michael",
+  "Rachel", "Robin", "Sophie", "Tiana"
+].sort();
+
 // --- Local Storage Helpers ---
 const STORAGE_KEYS = {
   BLUE_CONFIG: 'museum_blue_config',
@@ -49,7 +56,8 @@ const STORAGE_KEYS = {
   GREEN_EXCEPTIONS: 'museum_green_exceptions',
   GREEN_FORCED: 'museum_green_forced',
   CURRENT_TEAM: 'museum_current_team',
-  TEAM_LOCKS: 'museum_team_locks'
+  TEAM_LOCKS: 'museum_team_locks',
+  PRESETS: 'museum_presets'
 };
 
 const loadState = <T,>(key: string, fallback: T): T => {
@@ -134,6 +142,13 @@ const App: React.FC = () => {
   const [selectedBlueForSwap, setSelectedBlueForSwap] = useState<string>('');
   const [selectedGreenForSwap, setSelectedGreenForSwap] = useState<string>('');
 
+  // --- Presets State ---
+  const [presets, setPresets] = useState<Record<string, Record<string, PresetData>>>(() =>
+    loadState(STORAGE_KEYS.PRESETS, {})
+  );
+  const [currentWeekday, setCurrentWeekday] = useState('Monday');
+  const [currentVersion, setCurrentVersion] = useState('v1');
+
   // --- Persistence Effects ---
   useEffect(() => saveState(STORAGE_KEYS.CURRENT_TEAM, currentTeam), [currentTeam]);
   useEffect(() => saveState(STORAGE_KEYS.BLUE_CONFIG, config), [config]);
@@ -145,6 +160,7 @@ const App: React.FC = () => {
   useEffect(() => saveState(STORAGE_KEYS.GREEN_EXCEPTIONS, shiftExceptions), [shiftExceptions]);
   useEffect(() => saveState(STORAGE_KEYS.GREEN_FORCED, forcedAssignments), [forcedAssignments]);
   useEffect(() => saveState(STORAGE_KEYS.TEAM_LOCKS, teamLocks), [teamLocks]);
+  useEffect(() => saveState(STORAGE_KEYS.PRESETS, presets), [presets]);
 
 
   // --- Effects (Time) ---
@@ -290,6 +306,81 @@ const App: React.FC = () => {
     });
   };
 
+  // --- Preset Handlers ---
+  const getCurrentPresetData = (): PresetData => ({
+    config,
+    employeeNames,
+    employeeShifts,
+    numGreenEmployees,
+    greenEmployeeNames,
+    sideTasks,
+    shiftExceptions,
+    forcedAssignments,
+    teamLocks
+  });
+
+  const loadPresetData = (data: PresetData) => {
+    setConfig(data.config);
+    setEmployeeNames(data.employeeNames);
+    setEmployeeShifts(data.employeeShifts);
+    setNumGreenEmployees(data.numGreenEmployees);
+    setGreenEmployeeNames(data.greenEmployeeNames);
+    setSideTasks(data.sideTasks);
+    setShiftExceptions(data.shiftExceptions);
+    setForcedAssignments(data.forcedAssignments);
+    setTeamLocks(data.teamLocks);
+  };
+
+  const handleSavePreset = () => {
+    setPresets(prev => ({
+      ...prev,
+      [currentWeekday]: {
+        ...(prev[currentWeekday] || {}),
+        [currentVersion]: getCurrentPresetData()
+      }
+    }));
+    alert(`Saved ${currentWeekday} - ${currentVersion}`);
+  };
+
+  const handleSaveAsNewPreset = () => {
+    const newVersion = prompt("Enter new version name (e.g. v2):");
+    if (newVersion) {
+      setCurrentVersion(newVersion);
+      setPresets(prev => ({
+        ...prev,
+        [currentWeekday]: {
+          ...(prev[currentWeekday] || {}),
+          [newVersion]: getCurrentPresetData()
+        }
+      }));
+    }
+  };
+
+  const handleLoadPreset = () => {
+    const dayPresets = presets[currentWeekday];
+    if (dayPresets && dayPresets[currentVersion]) {
+      if (confirm(`Load ${currentWeekday} - ${currentVersion}? Current unsaved changes will be lost.`)) {
+        loadPresetData(dayPresets[currentVersion]);
+      }
+    } else {
+      alert("Preset not found.");
+    }
+  };
+
+  const handleDeletePreset = () => {
+    if (confirm(`Delete ${currentWeekday} - ${currentVersion}?`)) {
+      setPresets(prev => {
+        const newDayPresets = { ...prev[currentWeekday] };
+        delete newDayPresets[currentVersion];
+        return {
+          ...prev,
+          [currentWeekday]: newDayPresets
+        };
+      });
+      setCurrentVersion('v1'); // Reset to default or find another one?
+    }
+  };
+
   // --- Reset Handler ---
   const handleResetSystem = () => {
     if (window.confirm("Are you sure you want to RESTART the system? \n\nThis will clear all staff names, shifts, and settings to default.")) {
@@ -412,9 +503,34 @@ const App: React.FC = () => {
     }));
   };
 
+  const swapConfigs = (id1: string, id2: string) => {
+    // 1. Swap Forced Assignments
+    setForcedAssignments(prev => prev.map(f => {
+      if (f.employeeId === id1) return { ...f, employeeId: id2 };
+      if (f.employeeId === id2) return { ...f, employeeId: id1 };
+      return f;
+    }));
+
+    // 2. Swap Side Tasks
+    setSideTasks(prev => prev.map(t => {
+      if (t.employeeId === id1) return { ...t, employeeId: id2 };
+      if (t.employeeId === id2) return { ...t, employeeId: id1 };
+      return t;
+    }));
+
+    // 3. Swap Shift Exceptions
+    setShiftExceptions(prev => prev.map(e => {
+      if (e.employeeId === id1) return { ...e, employeeId: id2 };
+      if (e.employeeId === id2) return { ...e, employeeId: id1 };
+      return e;
+    }));
+  };
+
   const swapNames = (blueId: string, greenId: string) => {
     if (!blueId || !greenId) return;
     if (teamLocks.blue[blueId] || teamLocks.green[greenId]) return;
+
+    swapConfigs(blueId, greenId);
 
     setEmployeeNames(prev => {
       const updated = { ...prev };
@@ -450,6 +566,8 @@ const App: React.FC = () => {
       const greenId = greenEmployeeIds[i];
 
       if (teamLocks.blue[blueId] || teamLocks.green[greenId]) continue;
+
+      swapConfigs(blueId, greenId);
 
       const blueName = newBlueNames[blueId];
       const greenName = newGreenNames[greenId];
@@ -727,6 +845,53 @@ const App: React.FC = () => {
 
       <main className="max-w-[1800px] mx-auto px-6 py-8">
 
+        {/* Schedule Presets */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+             <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Schedule Management</p>
+                <h2 className="text-xl font-bold text-slate-800">Presets & Versions</h2>
+             </div>
+             <div className="flex flex-wrap items-center gap-3">
+                {/* Weekday Selector */}
+                <select
+                  value={currentWeekday}
+                  onChange={(e) => setCurrentWeekday(e.target.value)}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+                >
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                    <option key={day} value={day}>{day}</option>
+                  ))}
+                </select>
+
+                {/* Version Selector */}
+                <select
+                  value={currentVersion}
+                  onChange={(e) => setCurrentVersion(e.target.value)}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 bg-white shadow-sm focus:ring-2 focus:ring-blue-500 min-w-[100px]"
+                >
+                  {(() => {
+                     const versions = Object.keys(presets[currentWeekday] || {});
+                     const allVersions = Array.from(new Set([...versions, 'v1', currentVersion])).sort();
+                     return allVersions.map(v => (
+                       <option key={v} value={v}>{v}</option>
+                     ));
+                  })()}
+                </select>
+
+                <div className="h-8 w-px bg-slate-200 mx-1"></div>
+
+                <button onClick={handleLoadPreset} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors">Load</button>
+                <button onClick={handleSavePreset} className="px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold hover:bg-blue-100 transition-colors border border-blue-100">Save</button>
+                <button onClick={handleSaveAsNewPreset} className="px-4 py-2 rounded-lg bg-white text-slate-600 text-xs font-bold hover:bg-slate-50 transition-colors border border-slate-200">Save As...</button>
+
+                {presets[currentWeekday]?.[currentVersion] && (
+                   <button onClick={handleDeletePreset} className="px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors" title="Delete Preset"><Trash2 size={16} /></button>
+                )}
+             </div>
+          </div>
+        </div>
+
         {/* Team Swap Utility */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
@@ -736,14 +901,21 @@ const App: React.FC = () => {
               <p className="text-sm text-slate-500">Swap a couple people or flip the full roster. Locks keep anyone in place.</p>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={swapSelectedEmployees}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-emerald-600 text-white text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!selectedBlueForSwap || !selectedGreenForSwap || teamLocks.blue[selectedBlueForSwap] || teamLocks.green[selectedGreenForSwap]}
-              >
-                <ArrowRight size={16} />
-                Swap Selected
-              </button>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={swapSelectedEmployees}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-emerald-600 text-white text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!selectedBlueForSwap || !selectedGreenForSwap || teamLocks.blue[selectedBlueForSwap] || teamLocks.green[selectedGreenForSwap]}
+                >
+                  <ArrowRight size={16} />
+                  Change
+                </button>
+                {(!selectedBlueForSwap || !selectedGreenForSwap) ? (
+                  <span className="text-[10px] text-slate-400 font-medium px-1">Select 2 to swap</span>
+                ) : (teamLocks.blue[selectedBlueForSwap] || teamLocks.green[selectedGreenForSwap]) ? (
+                   <span className="text-[10px] text-red-400 font-medium px-1">Selection Locked</span>
+                ) : null}
+              </div>
               <button
                 onClick={swapEntireTeams}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold border border-slate-200 hover:bg-slate-50"
@@ -886,7 +1058,16 @@ const App: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-500 text-xs shadow-sm shrink-0">{id}</div>
                             <div className="flex-1 min-w-0">
-                                <input type="text" placeholder="Staff Name" value={employeeNames[id] || ''} onChange={(e) => setEmployeeNames(prev => ({ ...prev, [id]: e.target.value }))} className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 placeholder:text-slate-400 focus:ring-0" />
+                                <select
+                                  value={employeeNames[id] || ''}
+                                  onChange={(e) => setEmployeeNames(prev => ({ ...prev, [id]: e.target.value }))}
+                                  className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 cursor-pointer"
+                                >
+                                  <option value="">Select Name</option>
+                                  {EMPLOYEE_NAMES_LIST.map(name => (
+                                    <option key={name} value={name}>{name}</option>
+                                  ))}
+                                </select>
                                 <div className="h-0.5 w-full bg-slate-200 mt-1 group-hover:bg-blue-400 transition-colors rounded-full"></div>
                             </div>
                         </div>
@@ -1069,7 +1250,16 @@ const App: React.FC = () => {
                     return (
                       <div key={id} className="flex items-center gap-3 text-sm p-1 rounded-lg hover:bg-slate-50 transition-colors">
                         <span className="font-bold text-slate-700 w-9 flex-shrink-0 bg-slate-100 py-2 rounded text-center shadow-sm border border-slate-200">{id}</span>
-                        <input type="text" placeholder={`Name for ${id}`} value={greenEmployeeNames[id] || ''} onChange={(e) => setGreenEmployeeNames(prev => ({ ...prev, [id]: e.target.value }))} className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-slate-900 font-medium placeholder:text-slate-400 text-xs" />
+                        <select
+                          value={greenEmployeeNames[id] || ''}
+                          onChange={(e) => setGreenEmployeeNames(prev => ({ ...prev, [id]: e.target.value }))}
+                          className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-slate-900 font-medium text-xs"
+                        >
+                          <option value="">Select Name</option>
+                          {EMPLOYEE_NAMES_LIST.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
                       </div>
                     );
                   })}
